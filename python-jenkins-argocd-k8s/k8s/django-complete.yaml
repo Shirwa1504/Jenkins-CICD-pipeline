@@ -22,7 +22,7 @@ spec:
       containers:
       - name: django-app
 
-        image: ashirwadsarmah/django-todo-app:IMAGE_TAG
+        image: ashirwadsarmah/django-todo-app:1
 
         imagePullPolicy: Always
 
