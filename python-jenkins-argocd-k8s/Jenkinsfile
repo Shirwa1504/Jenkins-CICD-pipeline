@@ -1,25 +1,80 @@
 pipeline {
-agent any
 
-stages {
-    stage('Test DockerHub Login') {
-        steps {
-            withCredentials([
-                usernamePassword(
-                    credentialsId: 'dockerhub-cred',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )
-            ]) {
+    agent any
+
+    environment {
+        IMAGE_NAME = "ashirwadsarmah/django-todo-app"
+        IMAGE_TAG = "${BUILD_NUMBER}"
+    }
+
+    stages {
+
+        stage('Build Docker Image') {
+            steps {
+                sh """
+                    docker build \
+                    -t ${IMAGE_NAME}:${IMAGE_TAG} \
+                    python-jenkins-argocd-k8s
+                """
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-cred',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )
+                ]) {
+                    sh '''
+                    echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                    docker push ashirwadsarmah/django-todo-app:${BUILD_NUMBER}
+                    docker logout
+                    '''
+                }
+            }
+        }
+
+        stage('Update Kubernetes Manifest') {
+            steps {
+                sh """
+                sed -i 's|image: .*|image: ashirwadsarmah/django-todo-app:${BUILD_NUMBER}|g' \
+                python-jenkins-argocd-k8s/k8s/django-complete.yaml
+                """
+
                 sh '''
-                echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                docker info
-                docker logout
+                grep image python-jenkins-argocd-k8s/k8s/django-complete.yaml
                 '''
+            }
+        }
+
+        stage('Commit And Push') {
+            steps {
+
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'github-cred',
+                        usernameVariable: 'GITHUB_USER',
+                        passwordVariable: 'GITHUB_TOKEN'
+                    )
+                ]) {
+
+                    sh '''
+                    git config user.email "jenkins@local"
+                    git config user.name "Jenkins"
+
+                    git add python-jenkins-argocd-k8s/k8s/django-complete.yaml
+
+                    git commit -m "[Jenkins] Update image tag to ${BUILD_NUMBER}" || true
+
+                    git push \
+                    https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/Shirwa1504/Jenkins-CICD-pipeline.git \
+                    HEAD:main
+                    '''
+                }
             }
         }
     }
 }
-
-}
-
